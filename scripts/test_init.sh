@@ -2,12 +2,7 @@
 
 set -e
 
-echo "Create stand in volume for scripts"
-docker create -v /scripts --rm --name scripts alpine:3.6 /bin/true
-
-echo "Moving check_scaling.sh to scripts"
-docker cp scripts scripts:/
+ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." >/dev/null 2>&1 && pwd )"
 
 echo "Starting init tests"
-docker run --rm --network redis --volumes-from scripts \
-	redis:4.0.11-alpine sh /scripts/check_scaling.sh 2 2
+cat  "${ROOT}/scripts/check_scaling.sh" | docker exec -i $(docker ps --filter name=redis-sentinel -q) /bin/sh

@@ -2,8 +2,8 @@
 
 set -e
 
-sentinels="$1"
-slaves="$2"
+sentinels="${1:-2}"
+slaves="${2:-2}"
 HOST="-h redis-sentinel -p 26379"
 
 echo "Able to connect to sentinel"

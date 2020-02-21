@@ -1,6 +1,6 @@
-FROM redis:4.0.11-alpine
+FROM redis:5.0.7-alpine
 
-LABEL version="1.0.2"
+LABEL version="1.0.3"
 
 ENV REDIS_SENTINEL_IP redis-sentinel
 ENV REDIS_MASTER_NAME redismaster
