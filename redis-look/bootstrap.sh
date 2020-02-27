@@ -2,7 +2,7 @@
 
 for x in $(seq 5); do
   if /redis/search_master.sh ; then
-    # A master is already here. Nothing to do.
+    echo "A master is already here. Nothing to do."
     exit 0
   fi
   sleep 1
