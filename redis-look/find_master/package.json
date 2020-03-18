@@ -1,0 +1,14 @@
+{
+  "name": "find_first_master",
+  "version": "1.0.0",
+  "description": "find 1st redis master when booting a cluster",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Julien Pilet",
+  "license": "ISC",
+  "dependencies": {
+    "ioredis": "^4.16.0"
+  }
+}
