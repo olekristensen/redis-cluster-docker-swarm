@@ -19,6 +19,7 @@ async function test(addr) {
   const redis = new Redis({ host: addr,
     noDelay: true, 
     connectTimeout: 500, retryStrategy: () => false});
+  redis.on("error", () => {});
 
   try {
     const query = new Promise((resolve, reject) => {

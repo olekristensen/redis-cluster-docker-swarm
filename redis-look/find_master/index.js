@@ -2,6 +2,7 @@ const metaRedisPort = 2473;
 const path = '/data/appendonly.aof';
 const template_path = '/redis/redis.conf';
 const redis_conf_path = '/redis/redis-actual.conf';
+const quorum = parseInt(process.env.QUORUM);
 
 /*
  * Algorithm:
@@ -41,7 +42,7 @@ const util = require('util');
 const dns = require('dns');
 const child_process = require('child_process');
 
-const async_stat = util.promisify(fs.stat.bind(fs));
+const async_stat = util.promisify(fs.stat);
 const async_lookup = util.promisify(dns.lookup.bind(dns));
 const asyncAppendFile = util.promisify(fs.appendFile.bind(fs));
 const asyncReadFile = util.promisify(fs.readFile.bind(fs));
@@ -49,21 +50,50 @@ const asyncWriteFile = util.promisify(fs.writeFile.bind(fs));
 
 const searchRedisMaster = require('./search_redis_master').searchRedisMaster;
 
-const local_redis = new Redis({
-  port: metaRedisPort,
-  host: 'localhost'
-});
-
+let local_redis;
 const remote_meta_redis = {};
 
 let my_ip;
+let my_info;
 const host_info = {};
 let update_timeout;
 
 function disconnect_all() {
-  for (let r in [local_redis, ...remote_meta_redis]) {
-    r.disconnect();
+  for (let r in remote_meta_redis) {
+    remote_meta_redis[r].disconnect();
   }
+  local_redis.disconnect();
+}
+
+function compareHosts(entry_a, entry_b) {
+  const a = entry_a.value;
+  const b = entry_b.value;
+
+  if (a == b) {
+    return entry_a.host < entry_b.host ? -1 : (entry_a.host == entry_b.host ? 0 : 1);
+  }
+  if (a == 'dead') return 1;
+  if (b == 'dead') return -1;
+  if (a == 'no data') return 1;
+  if (b == 'no data') return -1;
+  return parseFloat(a) > parseFloat(b) ? -1 : 1;
+}
+
+function select_master() {
+  // host_info has enough support.
+  const candidates = [];
+  for (let h in host_info) {
+    const value = host_info[h];
+    if (h != 'master' && ((value == 'no data') || !isNaN(parseFloat(value)))) {
+      candidates.push({host: h, value: value});
+    }
+  }
+  if (candidates.length < quorum) {
+    return undefined;
+  }
+  candidates.sort(compareHosts);
+  console.log('Candidates, after sorting:', candidates);
+  return candidates[0].host;
 }
 
 async function update_host_info() {
@@ -71,8 +101,21 @@ async function update_host_info() {
     clearTimeout(update_timeout);
     update_timeout = undefined;
   }
+
+  if(!local_redis) { 
+    local_redis = new Redis({
+      port: metaRedisPort,
+      host: 'localhost',
+      noDelay: true, 
+      connectTimeout: 500,
+      maxRetriesPerRequest: 0});
+  }
   
-  console.log('Status is now:', host_info);
+  if (my_info) {
+    host_info[my_ip] = my_info;
+  }
+  host_info['master'] = select_master();
+  console.log(my_ip, ': status is now:', host_info);
   try {
     const result = await local_redis.set('status', JSON.stringify(host_info));
     if (result != 'OK') {
@@ -90,14 +133,15 @@ async function set_local_info() {
     console.warn('Can\'t figure out ip address');
     process.exit(1);
   }
+  console.log('my ips: ', ips[0]);
   my_ip = ips[0];
   try {
     const s = await async_stat(path);
-    host_info[my_ip] = s.mtime;
+    my_info = s.mtime;
     console.warn('Last write to ' + path + ':', s.mtime);
   } catch(err) {
-    console.warn('Failed to stat ' + path + ':', err);
-    host_info[ips[0]] = 'no data';
+    console.warn('Failed to stat ' + path + ':');
+    my_info = 'no data';
   }
   update_host_info();
 }
@@ -114,26 +158,34 @@ function getAddresses(hostname) {
 
 async function fetch_info(address) {
   if (!remote_meta_redis[address]) {
-    remote_meta_redis[address] = new Redis({
+    const redis = remote_meta_redis[address] = new Redis({
         host: address,
+	port: metaRedisPort,
         noDelay: true, 
         connectTimeout: 500,
+	maxRetriesPerRequest: 0,
         retryStrategy: () => false});
+    redis.on("error", () => {});
   }
 
-  const reply = await remote_meta_redis[h.address].get('status');
+  const reply = await remote_meta_redis[address].get('status');
 
   return JSON.parse(reply);
 }
 
 async function scan_all_hosts(hostname) {
-  const hosts = getAddresses(hostname);
+  const hosts = await getAddresses(hostname);
+  
   if (hosts.length == 0) {
     throw("can't resolve " + hostname);
   }
 
   // Start all status queries
-  const queries = Promise.allSettled(hosts.map(fetch_info));
+  const queries = Promise.allSettled(
+    hosts
+      .map((a) => a.address)
+      .filter((a) => a != my_ip)
+      .map(fetch_info));
 
   // Start and wait master search
   const redisMaster = await searchRedisMaster(hosts);
@@ -146,9 +198,13 @@ async function scan_all_hosts(hostname) {
   for (let i = 0; i < answers.length; ++i) {
     const a = answers[i];
     const address = hosts[i].address;
-    if (a.status == 'fulfilled') {
+    if (a.status == 'fulfilled' && typeof(a.value) == 'object' && a.value != null) {
+      console.log(address, 'new status:', a.value);
       host_info[address] = a.value[address];
       remote_status[address] = a.value;
+    } else {
+      console.log(address, 'is dead:', a.value);
+      host_info[address] = 'dead';
     }
   }
 
@@ -160,34 +216,37 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms, 'timeout'));
 }
 
+function isDeadOrUndefined(a) {
+  return a == undefined || a == 'dead';
+}
+
 function compare(a, b) {
-  const keys = Object.keys({...a, ...b});
-  for (let k of keys) {
-    if (!(k in a) || !(k in b) || a[k] !== b[k]) {
-      return false;
-    }
-  }
-  return keys.length > 0;
+  return a.master && a.master == b.master;
 }
 
 function check_convergence(remote_status, quorum) {
-  const num_agrees = 0;
-
+  if (!host_info.master) {
+    return false;
+  }
+  let num_agrees = 0;
+ 
   for (let addr in remote_status) {
     if (compare(remote_status[addr], host_info)) {
       num_agrees++;
     }
   }
+  console.log('Quorum support:', num_agrees, '/', quorum);
   return num_agrees >= quorum;
 }
 
+
 async function determine_master(hostname, quorum) {
-  set_local_info(hostname);
+  await set_local_info(hostname);
   let remote_status = {};
 
   while(!check_convergence(remote_status, quorum)) {
     try {
-      const r = scan_all_hosts();
+      const r = await scan_all_hosts(hostname);
 
       if (r.master) {
         return r.master;
@@ -196,46 +255,49 @@ async function determine_master(hostname, quorum) {
     } catch(err) {
       console.warn('Scan all hosts failed with: ', err);
       console.warn('Retrying in 1 sec.');
-      sleep(1000);
     }
+    await sleep(1000);
   }
 
   disconnect_all();
-  return select_master(remote_status);
+  return host_info.master;
 }
 
 async function start_redis(hostname, quorum) {
-  const master = determine_master(hostname, quorum);
-  const template = await asyncReadFile(template_path, 'utf8');
+  const master = await determine_master(hostname, quorum);
+  let template = await asyncReadFile(template_path, 'utf8');
 
   if (master == my_ip) {
-    console.log('Starting redis in master mode');
+    console.log(my_ip, ' configuring redis in master mode');
   } else {
-    console.log('Starting redis as slave of ' + master);
+    console.log(my_ip, ' configuring redis as slave of ' + master);
 
     template += '\nslaveof ' + master +'\n';
   }
 
   await asyncWriteFile(redis_conf_path, template);
 
-  const child = child_process.spawn('redis-server', [ redis_conf_path ], { detached: true });
-  child.unref();
+  //const child = child_process.spawn('redis-server', [ redis_conf_path ], { detached: true });
+  //child.unref();
 }
 
 (async()=>{
   try {
-    const metaredis = child_process.spawn('redis-server', [ '--port', metaRedisPort ]);
+    const metaredis = child_process.spawn('redis-server', [ '--port', metaRedisPort ],
+      { stdio: 'inherit' });
     metaredis.on('error', (err) => {
       console.error('Failed to start meta redis-server.');
+      process.exit(2);
     });
 
     await start_redis(process.env.REDIS_SERVICE_NAME,
                       parseInt(process.env.QUORUM || 2));
 
     metaredis.kill();
+    process.exit(0);
   } catch(err) {
     console.log('Failed to start redis: ', err);
-    exit(1);
+    process.exit(1);
   }
 })();
 

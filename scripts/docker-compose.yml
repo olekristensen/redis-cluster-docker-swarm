@@ -1,5 +1,9 @@
-version: '3.1'
+version: '3.3'
 
+networks:
+  redisnet:
+        driver: overlay
+        attachable: true
 volumes:
   redis-data: {}
 
@@ -10,6 +14,8 @@ services:
     environment:
       - REDIS_SERVICE_NAME=redis
       - REDIS_MASTER_NAME=redismaster
+    networks:
+      - redisnet
     deploy:
       replicas: 3
       endpoint_mode: dnsrr
@@ -19,7 +25,9 @@ services:
     environment:
       - QUORUM=2
       - REDIS_SERVICE_NAME=redis
-    volume:
+    networks:
+      - redisnet
+    volumes:
       - redis-data:/data
     deploy:
       replicas: 3
