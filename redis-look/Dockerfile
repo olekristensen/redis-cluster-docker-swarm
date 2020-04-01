@@ -21,4 +21,4 @@ RUN chmod +x *.sh
 
 EXPOSE 6379
 
-CMD node /redis/find_master/index.js && redis-server /redis/redis.conf
+CMD node /redis/find_master/index.js && redis-server /redis/redis-actual.conf

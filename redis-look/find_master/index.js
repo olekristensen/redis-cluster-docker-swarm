@@ -76,7 +76,7 @@ function compareHosts(entry_a, entry_b) {
   if (b == 'dead') return -1;
   if (a == 'no data') return 1;
   if (b == 'no data') return -1;
-  return parseFloat(a) > parseFloat(b) ? -1 : 1;
+  return new Date(a) < new Date(b) ? 1 : -1;
 }
 
 function select_master() {
@@ -84,7 +84,7 @@ function select_master() {
   const candidates = [];
   for (let h in host_info) {
     const value = host_info[h];
-    if (h != 'master' && ((value == 'no data') || !isNaN(parseFloat(value)))) {
+    if (h != 'master' && ((value == 'no data') || !isNaN(new Date(value).getTime()))) {
       candidates.push({host: h, value: value});
     }
   }
@@ -157,20 +157,34 @@ function getAddresses(hostname) {
 }
 
 async function fetch_info(address) {
-  if (!remote_meta_redis[address]) {
-    const redis = remote_meta_redis[address] = new Redis({
-        host: address,
-	port: metaRedisPort,
-        noDelay: true, 
-        connectTimeout: 500,
-	maxRetriesPerRequest: 0,
-        retryStrategy: () => false});
-    redis.on("error", () => {});
+  try {
+    if (!remote_meta_redis[address]) {
+      const redis = remote_meta_redis[address] = new Redis({
+	  host: address,
+	  port: metaRedisPort,
+	  noDelay: true, 
+	  connectTimeout: 500,
+	  maxRetriesPerRequest: 0,
+	  retryStrategy: () => false});
+      redis.on("error", () => {});
+    }
+
+    const reply = await remote_meta_redis[address].get('status');
+
+    const data = JSON.parse(reply);
+
+    for (let h in data) {
+      const d = new Date(data[h]);
+      if (!isNaN(d.getTime())) {
+	data[h] = d;
+      }
+    }
+
+    return data;
+  } catch (err) {
+    console.warm("When getting status of ", address, ": ", err);
+    return 'dead';
   }
-
-  const reply = await remote_meta_redis[address].get('status');
-
-  return JSON.parse(reply);
 }
 
 async function scan_all_hosts(hostname) {
@@ -230,6 +244,9 @@ function check_convergence(remote_status, quorum) {
   }
   let num_agrees = 0;
  
+  // make sure we count our own vote.
+  remote_status[my_ip] = host_info;
+
   for (let addr in remote_status) {
     if (compare(remote_status[addr], host_info)) {
       num_agrees++;
@@ -272,7 +289,7 @@ async function start_redis(hostname, quorum) {
   } else {
     console.log(my_ip, ' configuring redis as slave of ' + master);
 
-    template += '\nslaveof ' + master +'\n';
+    template += '\nreplicaof ' + master + ' 6379\n';
   }
 
   await asyncWriteFile(redis_conf_path, template);
