@@ -69,7 +69,16 @@ module.exports.searchRedisMaster = async (addresses) => {
     for (let q of queries) {
       const reply = await q.status;
       if (reply == 'master') {
-        return q.address;
+	// we found a candidate. Let's wait a bit to see if it is stable.
+	console.log('Found master candidate, waiting 10 seconds to verify stability...');
+	await sleep(10000);
+	const test2 = await test(q.address);
+	if (test2 == 'master') {
+	  console.log('Confirmed ' + q.address + ' with role ' + test2);
+	  return q.address;
+	} else {
+	  console.log(q.address + ': rejecting unstable master, new status: ' + test2);
+	}
       }
     }
     return undefined;
