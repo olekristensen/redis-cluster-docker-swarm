@@ -252,8 +252,8 @@ function check_convergence(remote_status, quorum) {
       num_agrees++;
     }
   }
-  console.log('Quorum support:', num_agrees, '/', quorum);
-  return num_agrees >= quorum;
+  console.log(my_ip, ': Quorum support:', num_agrees, '/', quorum, 'for master:', host_info.master);
+  return num_agrees >= quorum && my_ip == host_info.master;
 }
 
 
