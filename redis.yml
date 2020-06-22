@@ -1,5 +1,8 @@
-version: '3.1'
+version: '3.7'
 
+# Ole Kristensen, Den Frie Vilje for DR 
+# drexolek@dr.dk
+# based on https://redis.io/topics/cluster-tutorial and https://github.com/thomasjpfan/redis-cluster-docker-swarm, forked to https://github.com/olekristensen/redis-cluster-docker-swarm
 
 services:
 
