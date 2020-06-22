@@ -4,12 +4,12 @@ version: '3.1'
 services:
 
   redis-master:
-    image: redis:5.0.7-alpine
+    image: redis:6.0-alpine
     deploy:
       replicas: 1
 
   redis-sentinel:
-    image: destinationbook/redis-sentinel:${TAG:-latest}
+    image: olekristensen/redis-sentinel:${TAG:-latest}
     environment:
       - REDIS_IP=redis-master
       - REDIS_MASTER_NAME=redismaster
@@ -17,7 +17,7 @@ services:
       replicas: 3
 
   redis:
-    image: destinationbook/redis-look:${TAG:-latest}
+    image: olekristensen/redis-look:${TAG:-latest}
     environment:
       - REDIS_SENTINEL_IP=redis-sentinel
       - REDIS_MASTER_NAME=redismaster
