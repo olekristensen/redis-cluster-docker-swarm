@@ -2,12 +2,24 @@ version: '3.7'
 
 # Ole Kristensen, Den Frie Vilje for DR 
 # drexolek@dr.dk
-# based on https://redis.io/topics/cluster-tutorial and https://github.com/thomasjpfan/redis-cluster-docker-swarm, forked to https://github.com/olekristensen/redis-cluster-docker-swarm
+# based on https://redis.io/topics/cluster-tutorial and https://github.com/thomasjpfan/redis-cluster-docker-swarm, 
+# using fork at https://github.com/olekristensen/redis-cluster-docker-swarm
+
+x-defaults: &dr-defaults
+  dns:
+    - 10.100.15.1
+
+networks:
+  proxy:
+    external: true
 
 services:
 
   redis-master:
     image: redis:6.0-alpine
+    networks:
+      - default
+      - proxy
     deploy:
       replicas: 1
 
@@ -16,6 +28,8 @@ services:
     environment:
       - REDIS_IP=redis-master
       - REDIS_MASTER_NAME=redismaster
+    networks:
+      - default
     deploy:
       replicas: 3
 
@@ -25,5 +39,27 @@ services:
       - REDIS_SENTINEL_IP=redis-sentinel
       - REDIS_MASTER_NAME=redismaster
       - REDIS_SENTINEL_PORT=26379
+    networks:
+      - default
+      - proxy
     deploy:
-      replicas: 3
+      replicas: 2
+
+  redisinsight:
+    <<: *dr-defaults
+    image: "redislabs/redisinsight"
+    networks:
+      - default
+      - proxy
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=proxy
+        - traefik.http.routers.redis-http.rule=Host("${NAME}.${TLD}")
+        - traefik.http.routers.redis-http.entrypoints=http
+        #- traefik.http.routers.redis-http.middlewares=https-redirect
+        #- traefik.http.routers.redis-https.rule=Host("${NAME}.${TLD}")
+        #- traefik.http.routers.redis-https.entrypoints=https
+        #- traefik.http.routers.redis-https.tls=true
+        #- traefik.http.routers.redis-https.tls.certresolver=le
+        - traefik.http.services.redis.loadbalancer.server.port=8001
