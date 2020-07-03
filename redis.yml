@@ -63,3 +63,17 @@ services:
         #- traefik.http.routers.redis-https.tls=true
         #- traefik.http.routers.redis-https.tls.certresolver=le
         - traefik.http.services.redis.loadbalancer.server.port=8001
+
+  redisinsight-setup:
+    image: "curlimages/curl"
+    depends_on:
+      - redisinsight
+    deploy:
+      restart_policy:
+          condition: on-failure
+          delay: 10s
+          max_attempts: 5
+          window: 120s
+    networks:
+      - default
+    command: '--request POST --header "Content-Type: application/json" --data "{\"name\":\"redismaster\",\"connectionType\":\"STANDALONE\", \"host\":\"redis-master\", \"port\":6379}" http://redisinsight:8001/api/instance/'
