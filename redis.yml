@@ -57,11 +57,11 @@ services:
         - traefik.docker.network=proxy
         - traefik.http.routers.redis-http.rule=Host("${NAME}.${TLD}")
         - traefik.http.routers.redis-http.entrypoints=http
-        #- traefik.http.routers.redis-http.middlewares=https-redirect
-        #- traefik.http.routers.redis-https.rule=Host("${NAME}.${TLD}")
-        #- traefik.http.routers.redis-https.entrypoints=https
-        #- traefik.http.routers.redis-https.tls=true
-        #- traefik.http.routers.redis-https.tls.certresolver=le
+        - traefik.http.routers.redis-http.middlewares=https_redirect@docker
+        - traefik.http.routers.redis-https.rule=Host("${NAME}.${TLD}")
+        - traefik.http.routers.redis-https.entrypoints=https
+        - traefik.http.routers.redis-https.tls=true
+        - traefik.http.routers.redis-https.middlewares=airlook-developer-auth@docker
         - traefik.http.services.redis.loadbalancer.server.port=8001
 
   redisinsight-setup:
