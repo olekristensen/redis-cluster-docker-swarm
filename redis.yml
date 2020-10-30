@@ -1,4 +1,4 @@
-version: '3.7'
+version: '3.8'
 
 # Ole Kristensen, Den Frie Vilje for DR 
 # drexolek@dr.dk
@@ -32,6 +32,8 @@ services:
       - default
     deploy:
       replicas: 3
+      placement:
+        max_replicas_per_node: 1
 
   redis:
     image: olekristensen/redis-look:${TAG:-latest}
@@ -44,6 +46,8 @@ services:
       - proxy
     deploy:
       replicas: 2
+      placement:
+        max_replicas_per_node: 1
 
   redisinsight:
     <<: *dr-defaults
