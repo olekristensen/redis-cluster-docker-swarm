@@ -12,13 +12,16 @@ x-defaults: &dr-defaults
 networks:
   proxy:
     external: true
+  net:
+    driver: overlay
+    attachable: true
 
 services:
 
   redis-master:
     image: redis:6.0-alpine
     networks:
-      - default
+      - net
       - proxy
     deploy:
       replicas: 1
@@ -29,7 +32,7 @@ services:
       - REDIS_IP=redis-master
       - REDIS_MASTER_NAME=redismaster
     networks:
-      - default
+      - net
     deploy:
       replicas: 3
       placement:
@@ -42,7 +45,7 @@ services:
       - REDIS_MASTER_NAME=redismaster
       - REDIS_SENTINEL_PORT=26379
     networks:
-      - default
+      - net
       - proxy
     deploy:
       replicas: 2
@@ -53,7 +56,7 @@ services:
     <<: *dr-defaults
     image: "redislabs/redisinsight"
     networks:
-      - default
+      - net
       - proxy
     deploy:
       labels:
@@ -79,5 +82,5 @@ services:
           max_attempts: 5
           window: 120s
     networks:
-      - default
+      - net
     command: '--request POST --header "Content-Type: application/json" --data "{\"name\":\"redismaster\",\"connectionType\":\"STANDALONE\", \"host\":\"redis-master\", \"port\":6379}" http://redisinsight:8001/api/instance/'
